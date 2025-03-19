@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 using CryptoEat.Modules.HelpersN;
 
 namespace CryptoEat.Modules.Logs;
@@ -29,15 +29,15 @@ internal static partial class PassGen
         using var api = new MyrzApi(Generic.Settings.AntiPublicKey!);
         try
         {
-            var results = await api.GetEmailPasswords(users, 50);
-            if (!string.IsNullOrEmpty(results.error))
+            var results = await api.GetEmailPasswords(users.ToArray(), 50);
+            if (!results.Success) // Вместо string.IsNullOrEmpty(results.error)
             {
-                await LogStreams.ErrorLog.WriteLineAsync("Antipublic error: " + results.error);
+                await LogStreams.ErrorLog.WriteLineAsync("Antipublic error");
                 await LogStreams.ErrorLog.FlushAsync();
                 return Enumerable.Empty<string>().ToHashSet();
             }
 
-            var lines = results.results.Where(x => x.Contains(':'))
+            var lines = results.Results.Where(x => x.Contains(':')) // Results с заглавной буквы
                 .Distinct()
                 .Select(x => x.Split(':')[1]);
 
