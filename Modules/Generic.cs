@@ -250,6 +250,7 @@ internal static partial class Generic
 
     internal static async Task CheckAntipublicAccess()
     {
+        Console.WriteLine($"AntiPublicKey: {Settings.AntiPublicKey}");
         if (string.IsNullOrEmpty(Settings.AntiPublicKey))
         {
             Settings.AntipublicWorking = false;
