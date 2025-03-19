@@ -21,9 +21,17 @@ public class MyrzApi : IDisposable
 
     private async Task<T> GetAsync<T>(string path)
     {
-        var response = await _client.GetStringAsync($"{path}?key={_key}");
-        return JsonConvert.DeserializeObject<T>(response);
+        var response = await _client.GetAsync($"{path}?key={_key}");
+        var responseString = await response.Content.ReadAsStringAsync();
+    
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new Exception($"Ошибка API: {response.StatusCode} - {responseString}");
+        }
+    
+        return JsonConvert.DeserializeObject<T>(responseString);
     }
+
 
     private async Task<T> PostAsync<T>(string path, Dictionary<string, string> parameters)
     {
