@@ -1,224 +1,122 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Threading.Tasks;
 
 namespace CryptoEat.Modules.HelpersN;
 
 public class MyrzApi : IDisposable
 {
-    #region Fields
+    private readonly HttpClient _client;
+    private readonly string _key;
+    private const string BaseUrl = "https://antipublic.one/api/v2/";
 
-    protected readonly HttpClient Client = new();
-    protected string Endpoint;
-    protected string Key;
-
-    #endregion
-
-    #region Constructor
-
-    public MyrzApi(string key, string endpoint = "http://antipublic.one/api/")
+    public MyrzApi(string key)
     {
-        Key = key;
-        Endpoint = endpoint;
-        Client.BaseAddress = new Uri(endpoint);
-        Client.Timeout = new TimeSpan(0, 0, 30);
+        _key = key;
+        _client = new HttpClient { BaseAddress = new Uri(BaseUrl) };
+        _client.Timeout = TimeSpan.FromSeconds(30);
     }
 
-    #endregion
-
-    #region Methods
-
-    private static async Task<T> ParseJsonResp<T>(HttpResponseMessage resp) =>
-        JsonConvert.DeserializeObject<T>(await resp.Content.ReadAsStringAsync())!;
-
-    private async Task<T> RequestPost<T>(string path, Dictionary<string, string> requestParams) =>
-        await ParseJsonResp<T>(await Client.PostAsync(path, new FormUrlEncodedContent(requestParams)));
-
-    private async Task<T> RequestGet<T>(string path, Dictionary<string, string> requestParams)
+    private async Task<T> GetAsync<T>(string path)
     {
-        var str1 = await new FormUrlEncodedContent(requestParams).ReadAsStringAsync();
-        var str2 = !path.Contains('?') ? "?" + str1 : "&" + str1;
-        return JsonConvert.DeserializeObject<T>(await Client.GetStringAsync(path + str2))!;
+        var response = await _client.GetStringAsync($"{path}?key={_key}");
+        return JsonConvert.DeserializeObject<T>(response);
     }
 
-    public async Task<CheckLinesRespLine[]> CheckLines(
-        string[] lines,
-        bool insert) =>
-        await ParseJsonResp<CheckLinesRespLine[]>(await Client.PostAsync("part_search.php?key=" + Key,
-            new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                {
-                    "type",
-                    insert ? nameof(insert) : "noinsert"
-                },
-                {
-                    nameof(lines),
-                    string.Join(" ", lines)
-                }
-            })));
-
-    public async Task<AntiPublicAccess> CheckAccess()
+    private async Task<T> PostAsync<T>(string path, Dictionary<string, string> parameters)
     {
-        var api = this;
-        var publicAccessResp = await api.RequestGet<AntiPublicAccessResp>("check.php?key=" + api.Key,
-            new Dictionary<string, string>
-            {
-                {
-                    "plus",
-                    "1"
-                }
-            });
-        return new AntiPublicAccess
+        parameters["key"] = _key;
+        var content = new FormUrlEncodedContent(parameters);
+        var response = await _client.PostAsync(path, content);
+        var responseString = await response.Content.ReadAsStringAsync();
+        return JsonConvert.DeserializeObject<T>(responseString);
+    }
+
+    public async Task<int> GetLineCount()
+    {
+        var response = await GetAsync<CountLinesResponse>("countLines");
+        return response.Count;
+    }
+
+    public async Task<CheckAccessResponse> CheckAccess()
+    {
+        return await GetAsync<CheckAccessResponse>("checkAccess");
+    }
+
+    public async Task<AvailableQueriesResponse> GetAvailableQueries()
+    {
+        return await GetAsync<AvailableQueriesResponse>("availableQueries");
+    }
+
+    public async Task<CheckLinesResponse> CheckLines(string[] lines, bool insert = false)
+    {
+        var parameters = new Dictionary<string, string>
         {
-            general = publicAccessResp.message == "Access is exists",
-            plus = publicAccessResp.plus == "Access is exists"
+            { "lines[]", string.Join(",", lines) },
+            { "insert", insert ? "yes" : "no" }
         };
+        return await PostAsync<CheckLinesResponse>("checkLines", parameters);
     }
 
-    public async Task<EmailSearchResult> SearchEmail(string email)
+    public async Task<EmailSearchResponse> SearchEmail(string email)
     {
-        var api = this;
-        var emailSearchResp = await api.RequestPost<EmailSearchResp>("email_search.php?key=" + api.Key,
-            new Dictionary<string, string>
-            {
-                {
-                    nameof(email),
-                    email
-                }
-            });
-        if (emailSearchResp.error != null)
-        {
-            throw new ApiException(emailSearchResp.error);
-        }
+        var parameters = new Dictionary<string, string> { { "email", email } };
+        return await PostAsync<EmailSearchResponse>("emailSearch", parameters);
+    }
 
-        var strArray = new string[emailSearchResp.results.Length];
-        for (var index = 0; index < emailSearchResp.results.Length; ++index)
+    public async Task<EmailSearchResponse> GetEmailPasswords(string[] emails, int passwordLimit = 100)
+    {
+        var parameters = new Dictionary<string, string>
         {
-            strArray[index] = emailSearchResp.results[index].line;
-        }
-
-        return new EmailSearchResult
-        {
-            success = emailSearchResp.success,
-            lines = strArray,
-            availableQueries = emailSearchResp.awailableQueries
+            { "emails[]", string.Join(",", emails) },
+            { "limit", passwordLimit.ToString() }
         };
+        return await PostAsync<EmailSearchResponse>("emailPasswords", parameters);
     }
 
-    public async Task<int> GetAvailableQueries()
+    public void Dispose()
     {
-        var api = this;
-        var availableQueriesResp = await api.RequestPost<AvailableQueriesResp>("email_search.php?key=" + api.Key,
-            new Dictionary<string, string>
-            {
-                {
-                    "do",
-                    "access"
-                }
-            });
-        return availableQueriesResp.error == null
-            ? availableQueriesResp.availableQueries
-            : throw new ApiException(availableQueriesResp.error);
+        _client.Dispose();
     }
 
-    public async Task<long> GetLineCount() =>
-        await RequestGet<long>("count_lines.php?key=" + Key, new Dictionary<string, string>());
-
-    public async Task<EmailPasswordsResponse> GetEmailPasswords(
-        IEnumerable<string> emails,
-        int passwordLimit)
+    public class CountLinesResponse
     {
-        var jsonResp = await ParseJsonResp<EmailPasswordsResponse>(await Client.PostAsync(
-            "email_part_search.php?key=" + Key, new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                {
-                    "lines",
-                    string.Join(" ", emails)
-                },
-                {
-                    "limit",
-                    passwordLimit.ToString()
-                }
-            })));
-        return string.IsNullOrEmpty(jsonResp.error) ? jsonResp : throw new ApiException(jsonResp.error);
+        [JsonProperty("count")]
+        public int Count { get; set; }
     }
 
-    #endregion
-
-    #region Exceptions
-
-    private class ApiException : Exception
+    public class CheckAccessResponse
     {
-        public ApiException(string message)
-            : base(message)
-        {
-        }
+        public bool Success { get; set; }
+        public bool Plus { get; set; }
     }
 
-    #endregion
-
-    #region Models
-
-    public struct CheckLinesRespLine
+    public class AvailableQueriesResponse
     {
-        public string line;
-        public bool is_private;
+        public bool Success { get; set; }
+        public int EmailSearch { get; set; }
+        public int PasswordSearch { get; set; }
     }
 
-    private struct AntiPublicAccessResp
+    public class CheckLinesResponse
     {
-        public string message;
-        public string error;
-        public string plus;
+        public bool Success { get; set; }
+        public List<LineResult> Result { get; set; }
     }
 
-    public struct AntiPublicAccess
+    public class LineResult
     {
-        public bool general;
-        public bool plus;
+        public string Line { get; set; }
+        public bool IsPrivate { get; set; }
     }
 
-    private struct EmailSearchResp
+    public class EmailSearchResponse
     {
-        public string error;
-        public bool success;
-        public EmailSearchLine[] results;
-        public int awailableQueries;
-        public int resultCount;
+        public bool Success { get; set; }
+        public int AvailableQueries { get; set; }
+        public int ResultCount { get; set; }
+        public List<string> Results { get; set; }
     }
-
-    private struct EmailSearchLine
-    {
-        public string line;
-    }
-
-    public struct EmailSearchResult
-    {
-        public bool success;
-        public string[] lines;
-        public int availableQueries;
-    }
-
-    private struct AvailableQueriesResp
-    {
-        public string error;
-        public int availableQueries;
-    }
-
-    public struct CheckUpdatesResult
-    {
-        public string url;
-        public string version;
-        public string changelog;
-        public string archiveUrl;
-    }
-
-    public struct EmailPasswordsResponse
-    {
-        public string[] results;
-        public int availableQueries;
-        public string error;
-    }
-
-    #endregion
-
-    public void Dispose() => Client.Dispose();
 }
