@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using CryptoEat.Modules.HelpersN;
@@ -262,7 +262,7 @@ internal static partial class Generic
         {
             using var api = new MyrzApi(Settings.AntiPublicKey);
             var result = await api.CheckAccess();
-            Settings.AntipublicWorking = result.plus;
+            Settings.AntipublicWorking = result.Plus;
         }
         catch (Exception e)
         {
