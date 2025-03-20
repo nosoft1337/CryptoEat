@@ -1,6 +1,7 @@
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 
@@ -15,35 +16,59 @@ public class MyrzApi : IDisposable
     public MyrzApi(string key)
     {
         _key = key;
-        _client = new HttpClient { BaseAddress = new Uri(BaseUrl) };
-        _client.Timeout = TimeSpan.FromSeconds(30);
+
+        var handler = new HttpClientHandler
+        {
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+        };
+
+        _client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri(BaseUrl),
+            Timeout = TimeSpan.FromSeconds(30)
+        };
+
+        // Добавляем заголовки, чтобы имитировать браузер
+        _client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+        _client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
     }
 
     private async Task<T> GetAsync<T>(string path)
     {
-        string url = $"{path}?key={_key}";
-        Console.WriteLine($"Запрос к API: {url}"); // Вывод запроса в консоль
-    
+        string url = $"{BaseUrl}{path}?key={_key}"; // Теперь полный URL
+        Console.WriteLine($"Запрос к API: {url}"); // Вывод запроса
+
         var response = await _client.GetAsync(url);
         var responseString = await response.Content.ReadAsStringAsync();
-    
+
         Console.WriteLine($"Ответ от API: {responseString}"); // Лог ответа
-    
+
         if (!response.IsSuccessStatusCode)
         {
             throw new Exception($"Ошибка API: {response.StatusCode} - {responseString}");
         }
-    
+
         return JsonConvert.DeserializeObject<T>(responseString);
     }
-
 
     private async Task<T> PostAsync<T>(string path, Dictionary<string, string> parameters)
     {
         parameters["key"] = _key;
         var content = new FormUrlEncodedContent(parameters);
-        var response = await _client.PostAsync(path, content);
+        
+        string url = $"{BaseUrl}{path}"; // Исправление формирования URL
+        Console.WriteLine($"POST запрос к API: {url}");
+
+        var response = await _client.PostAsync(url, content);
         var responseString = await response.Content.ReadAsStringAsync();
+
+        Console.WriteLine($"Ответ от API: {responseString}");
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new Exception($"Ошибка API: {response.StatusCode} - {responseString}");
+        }
+
         return JsonConvert.DeserializeObject<T>(responseString);
     }
 
