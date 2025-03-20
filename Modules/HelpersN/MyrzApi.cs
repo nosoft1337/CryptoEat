@@ -21,8 +21,13 @@ public class MyrzApi : IDisposable
 
     private async Task<T> GetAsync<T>(string path)
     {
-        var response = await _client.GetAsync($"{path}?key={_key}");
+        string url = $"{path}?key={_key}";
+        Console.WriteLine($"Запрос к API: {url}"); // Вывод запроса в консоль
+    
+        var response = await _client.GetAsync(url);
         var responseString = await response.Content.ReadAsStringAsync();
+    
+        Console.WriteLine($"Ответ от API: {responseString}"); // Лог ответа
     
         if (!response.IsSuccessStatusCode)
         {
